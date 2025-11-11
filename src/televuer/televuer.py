@@ -342,7 +342,7 @@ class TeleVuer:
                         ImageBackground(
                             self.img2display,
                             aspect=self.aspect_ratio,
-                            height=1,
+                            height=0.5,
                             distanceToCamera=1,
                             format="jpeg",
                             quality=80,
