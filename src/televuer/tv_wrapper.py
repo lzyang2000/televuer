@@ -283,12 +283,12 @@ class TeleVuerWrapper:
             # The origin of the coordinate for IK Solve is near the WAIST joint motor. You can use teleop/robot_control/robot_arm_ik.py Unit_Test to visualize it.
             # The origin of the coordinate of IPunitree_Brobot_head_arm is HEAD. 
             # So it is necessary to translate the origin of IPunitree_Brobot_head_arm from HEAD to WAIST.
-            left_IPunitree_Brobot_wrist_arm = left_IPunitree_Brobot_head_arm.copy()
-            right_IPunitree_Brobot_wrist_arm = right_IPunitree_Brobot_head_arm.copy()
-            left_IPunitree_Brobot_wrist_arm[0, 3] +=0.15 # x
-            right_IPunitree_Brobot_wrist_arm[0,3] +=0.15
-            left_IPunitree_Brobot_wrist_arm[2, 3] +=0.45 # z
-            right_IPunitree_Brobot_wrist_arm[2,3] +=0.45
+            left_IPunitree_Brobot_waist_arm = left_IPunitree_Brobot_head_arm.copy()
+            right_IPunitree_Brobot_waist_arm = right_IPunitree_Brobot_head_arm.copy()
+            left_IPunitree_Brobot_waist_arm[0, 3] +=0.15 # x
+            right_IPunitree_Brobot_waist_arm[0,3] +=0.15
+            left_IPunitree_Brobot_waist_arm[2, 3] +=0.45 # z
+            right_IPunitree_Brobot_waist_arm[2,3] +=0.45
 
             # -----------------------------------hand position----------------------------------------
             if left_arm_is_valid and right_arm_is_valid:
@@ -347,11 +347,11 @@ class TeleVuerWrapper:
                 left_Brobot_arm_hand_rot = None
                 right_Brobot_arm_hand_rot = None
             return TeleData(
-                # T, origin:world?,xr -> robot(change basis)
+                # T, origin:world, xr -> robot(change basis)
                 head_pose=Brobot_world_head,
                 # T, origin:waist, xr -> robot(change basis) world -> head(translation) -> wrist(translation)
-                left_wrist_pose=left_IPunitree_Brobot_wrist_arm,
-                right_wrist_pose=right_IPunitree_Brobot_wrist_arm,
+                left_wrist_pose=left_IPunitree_Brobot_waist_arm,
+                right_wrist_pose=right_IPunitree_Brobot_waist_arm,
                 # 25*3(hand position), origin:arm xr -> robot(change basis) world -> arm, initial pose
                 left_hand_pos=left_IPunitree_Brobot_arm_hand_pos,
                 right_hand_pos=right_IPunitree_Brobot_arm_hand_pos,
@@ -389,20 +389,20 @@ class TeleVuerWrapper:
             # The origin of the coordinate for IK Solve is near the WAIST joint motor. You can use teleop/robot_control/robot_arm_ik.py Unit_Test to check it.
             # The origin of the coordinate of IPunitree_Brobot_head_arm is HEAD. 
             # So it is necessary to translate the origin of IPunitree_Brobot_head_arm from HEAD to WAIST.
-            left_IPunitree_Brobot_wrist_arm = left_IPunitree_Brobot_head_arm.copy()
-            right_IPunitree_Brobot_wrist_arm = right_IPunitree_Brobot_head_arm.copy()
-            left_IPunitree_Brobot_wrist_arm[0, 3] +=0.15 # x
-            right_IPunitree_Brobot_wrist_arm[0,3] +=0.15
-            left_IPunitree_Brobot_wrist_arm[2, 3] +=0.45 # z
-            right_IPunitree_Brobot_wrist_arm[2,3] +=0.45
+            left_IPunitree_Brobot_waist_arm = left_IPunitree_Brobot_head_arm.copy()
+            right_IPunitree_Brobot_waist_arm = right_IPunitree_Brobot_head_arm.copy()
+            left_IPunitree_Brobot_waist_arm[0, 3] +=0.15 # x
+            right_IPunitree_Brobot_waist_arm[0,3] +=0.15
+            left_IPunitree_Brobot_waist_arm[2, 3] +=0.45 # z
+            right_IPunitree_Brobot_waist_arm[2,3] +=0.45
             # left_IPunitree_Brobot_waist_arm[1, 3] +=0.02 # y
             # right_IPunitree_Brobot_waist_arm[1,3] +=0.02
             return TeleData(
-                #(same) T, origin:world?,xr -> robot(change basis)
+                #(same) T, origin:world, xr -> robot(change basis)
                 head_pose=Brobot_world_head,
                 #(same) T, origin:waist, xr -> robot(change basis) world -> head(translation) -> wrist(translation)
-                left_wrist_pose=left_IPunitree_Brobot_wrist_arm,
-                right_wrist_pose=right_IPunitree_Brobot_wrist_arm,
+                left_wrist_pose=left_IPunitree_Brobot_waist_arm,
+                right_wrist_pose=right_IPunitree_Brobot_waist_arm,
                 # HandState
                 left_ctrl_trigger=self.tvuer.left_ctrl_trigger,
                 left_ctrl_triggerValue=10.0 - self.tvuer.left_ctrl_triggerValue * 10,
