@@ -261,6 +261,7 @@ class TeleVuerWrapper:
             #   - Then, apply the rotation PoseMatrix_openxr in the OpenXR Convention (The function of PoseMatrix_openxr)
             #   - Finally, transform back to the Robot Convention (The function of T_{robot}_{openxr})
             #   - This results in the same rotation effect under the Robot Convention as in the OpenXR Convention.
+            # multiply by T on the left to convert the space basis, and multiply by T^T on the right to convert the pose’s own orientation basis
             Brobot_world_head = T_ROBOT_OPENXR @ Bxr_world_head @ T_OPENXR_ROBOT
             left_IPxr_Brobot_world_arm  = T_ROBOT_OPENXR @ left_IPxr_Bxr_world_arm @ T_OPENXR_ROBOT
             right_IPxr_Brobot_world_arm = T_ROBOT_OPENXR @ right_IPxr_Bxr_world_arm @ T_OPENXR_ROBOT
@@ -276,18 +277,18 @@ class TeleVuerWrapper:
             left_IPunitree_Brobot_head_arm = left_IPunitree_Brobot_world_arm.copy()
             right_IPunitree_Brobot_head_arm = right_IPunitree_Brobot_world_arm.copy()
             left_IPunitree_Brobot_head_arm[0:3, 3]  = left_IPunitree_Brobot_head_arm[0:3, 3] - Brobot_world_head[0:3, 3]
-            right_IPunitree_Brobot_head_arm[0:3, 3] = right_IPunitree_Brobot_world_arm[0:3, 3] - Brobot_world_head[0:3, 3]
+            right_IPunitree_Brobot_head_arm[0:3, 3] = right_IPunitree_Brobot_head_arm[0:3, 3] - Brobot_world_head[0:3, 3]
 
             # =====coordinate origin offset=====
             # The origin of the coordinate for IK Solve is near the WAIST joint motor. You can use teleop/robot_control/robot_arm_ik.py Unit_Test to visualize it.
             # The origin of the coordinate of IPunitree_Brobot_head_arm is HEAD. 
             # So it is necessary to translate the origin of IPunitree_Brobot_head_arm from HEAD to WAIST.
-            left_IPunitree_Brobot_wrist_arm = left_IPunitree_Brobot_head_arm.copy()
-            right_IPunitree_Brobot_wrist_arm = right_IPunitree_Brobot_head_arm.copy()
-            left_IPunitree_Brobot_wrist_arm[0, 3] +=0.15 # x
-            right_IPunitree_Brobot_wrist_arm[0,3] +=0.15
-            left_IPunitree_Brobot_wrist_arm[2, 3] +=0.45 # z
-            right_IPunitree_Brobot_wrist_arm[2,3] +=0.45
+            left_IPunitree_Brobot_waist_arm = left_IPunitree_Brobot_head_arm.copy()
+            right_IPunitree_Brobot_waist_arm = right_IPunitree_Brobot_head_arm.copy()
+            left_IPunitree_Brobot_waist_arm[0, 3] +=0.15 # x
+            right_IPunitree_Brobot_waist_arm[0,3] +=0.15
+            left_IPunitree_Brobot_waist_arm[2, 3] +=0.45 # z
+            right_IPunitree_Brobot_waist_arm[2,3] +=0.45
 
             # -----------------------------------hand position----------------------------------------
             if left_arm_is_valid and right_arm_is_valid:
@@ -346,13 +347,18 @@ class TeleVuerWrapper:
                 left_Brobot_arm_hand_rot = None
                 right_Brobot_arm_hand_rot = None
             return TeleData(
+                # T, origin:world, xr -> robot(change basis)
                 head_pose=Brobot_world_head,
-                left_wrist_pose=left_IPunitree_Brobot_wrist_arm,
-                right_wrist_pose=right_IPunitree_Brobot_wrist_arm,
+                # T, origin:waist, xr -> robot(change basis) world -> head(translation) -> wrist(translation)
+                left_wrist_pose=left_IPunitree_Brobot_waist_arm,
+                right_wrist_pose=right_IPunitree_Brobot_waist_arm,
+                # 25*3(hand position), origin:arm xr -> robot(change basis) world -> arm, initial pose
                 left_hand_pos=left_IPunitree_Brobot_arm_hand_pos,
                 right_hand_pos=right_IPunitree_Brobot_arm_hand_pos,
+                # 25*3(hand rotation), origin:arm xr -> robot(change basis) world -> arm
                 left_hand_rot=left_Brobot_arm_hand_rot,
                 right_hand_rot=right_Brobot_arm_hand_rot,
+                # HandState
                 left_hand_pinch=self.tvuer.left_hand_pinch,
                 left_hand_pinchValue=self.tvuer.left_hand_pinchValue * 100.0,
                 left_hand_squeeze=self.tvuer.left_hand_squeeze,
@@ -383,18 +389,21 @@ class TeleVuerWrapper:
             # The origin of the coordinate for IK Solve is near the WAIST joint motor. You can use teleop/robot_control/robot_arm_ik.py Unit_Test to check it.
             # The origin of the coordinate of IPunitree_Brobot_head_arm is HEAD. 
             # So it is necessary to translate the origin of IPunitree_Brobot_head_arm from HEAD to WAIST.
-            left_IPunitree_Brobot_wrist_arm = left_IPunitree_Brobot_head_arm.copy()
-            right_IPunitree_Brobot_wrist_arm = right_IPunitree_Brobot_head_arm.copy()
-            left_IPunitree_Brobot_wrist_arm[0, 3] +=0.15 # x
-            right_IPunitree_Brobot_wrist_arm[0,3] +=0.15
-            left_IPunitree_Brobot_wrist_arm[2, 3] +=0.45 # z
-            right_IPunitree_Brobot_wrist_arm[2,3] +=0.45
+            left_IPunitree_Brobot_waist_arm = left_IPunitree_Brobot_head_arm.copy()
+            right_IPunitree_Brobot_waist_arm = right_IPunitree_Brobot_head_arm.copy()
+            left_IPunitree_Brobot_waist_arm[0, 3] +=0.15 # x
+            right_IPunitree_Brobot_waist_arm[0,3] +=0.15
+            left_IPunitree_Brobot_waist_arm[2, 3] +=0.45 # z
+            right_IPunitree_Brobot_waist_arm[2,3] +=0.45
             # left_IPunitree_Brobot_waist_arm[1, 3] +=0.02 # y
             # right_IPunitree_Brobot_waist_arm[1,3] +=0.02
             return TeleData(
+                #(same) T, origin:world, xr -> robot(change basis)
                 head_pose=Brobot_world_head,
-                left_wrist_pose=left_IPunitree_Brobot_wrist_arm,
-                right_wrist_pose=right_IPunitree_Brobot_wrist_arm,
+                #(same) T, origin:waist, xr -> robot(change basis) world -> head(translation) -> wrist(translation)
+                left_wrist_pose=left_IPunitree_Brobot_waist_arm,
+                right_wrist_pose=right_IPunitree_Brobot_waist_arm,
+                # HandState
                 left_ctrl_trigger=self.tvuer.left_ctrl_trigger,
                 left_ctrl_triggerValue=10.0 - self.tvuer.left_ctrl_triggerValue * 10,
                 left_ctrl_squeeze=self.tvuer.left_ctrl_squeeze,
