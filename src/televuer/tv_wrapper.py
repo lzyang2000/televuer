@@ -276,7 +276,7 @@ class TeleVuerWrapper:
             left_IPunitree_Brobot_head_arm = left_IPunitree_Brobot_world_arm.copy()
             right_IPunitree_Brobot_head_arm = right_IPunitree_Brobot_world_arm.copy()
             left_IPunitree_Brobot_head_arm[0:3, 3]  = left_IPunitree_Brobot_head_arm[0:3, 3] - Brobot_world_head[0:3, 3]
-            right_IPunitree_Brobot_head_arm[0:3, 3] = right_IPunitree_Brobot_world_arm[0:3, 3] - Brobot_world_head[0:3, 3]
+            right_IPunitree_Brobot_head_arm[0:3, 3] = right_IPunitree_Brobot_head_arm[0:3, 3] - Brobot_world_head[0:3, 3]
 
             # =====coordinate origin offset=====
             # The origin of the coordinate for IK Solve is near the WAIST joint motor. You can use teleop/robot_control/robot_arm_ik.py Unit_Test to visualize it.
