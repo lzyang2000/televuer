@@ -11,9 +11,8 @@ from televuer import TeleVuerWrapper
 import logging_mp
 import rclpy
 from std_msgs.msg import Float32, Float32MultiArray, Float64MultiArray, Bool
+from geometry_msgs.msg import Pose
 logger_mp = logging_mp.get_logger(__name__, level=logging_mp.INFO)
-
-
 def run_test_tv_wrapper():
 
     ros_node = None
@@ -37,9 +36,9 @@ def run_test_tv_wrapper():
     # ROS2 init & publishers
     rclpy.init(args=None)
     ros_node = rclpy.create_node('xr_tele_state_pub')
-    pub_head = ros_node.create_publisher(Float64MultiArray, 'xr/head_pose_mat', 10)
-    pub_left = ros_node.create_publisher(Float64MultiArray, 'xr/left_arm_pose_mat', 10)
-    pub_right = ros_node.create_publisher(Float64MultiArray, 'xr/right_arm_pose_mat', 10)
+    pub_head = ros_node.create_publisher(Pose, 'xr/head_pose', 10)
+    pub_left = ros_node.create_publisher(Pose, 'xr/left_wrist_pose', 10)
+    pub_right = ros_node.create_publisher(Pose, 'xr/right_wrist_pose', 10)
     if use_hand_track:
         pub_lh_pos = ros_node.create_publisher(Float32MultiArray, 'xr/left_hand_pos', 10)
         pub_rh_pos = ros_node.create_publisher(Float32MultiArray, 'xr/right_hand_pos', 10)
@@ -71,16 +70,10 @@ def run_test_tv_wrapper():
             logger_mp.info(f"[Head Pose]:\n{teleData.head_pose}")
             logger_mp.info(f"[Left Wrist Pose]:\n{teleData.left_wrist_pose}")
             logger_mp.info(f"[Right Wrist Pose]:\n{teleData.right_wrist_pose}")
-            # publish core pose matrices (row-major flatten)
-            head_msg = Float64MultiArray()
-            head_msg.data = teleData.head_pose.astype(np.float64).reshape(-1).tolist()
-            pub_head.publish(head_msg)
-            left_msg = Float64MultiArray()
-            left_msg.data = teleData.left_wrist_pose.astype(np.float64).reshape(-1).tolist()
-            pub_left.publish(left_msg)
-            right_msg = Float64MultiArray()
-            right_msg.data = teleData.right_wrist_pose.astype(np.float64).reshape(-1).tolist()
-            pub_right.publish(right_msg)
+            # publish pose messages
+            pub_head.publish(teleData.head_pose)
+            pub_left.publish(teleData.left_wrist_pose)
+            pub_right.publish(teleData.right_wrist_pose)
 
             if use_hand_track: # hand
                 logger_mp.info(f"[Left Hand Positions] shape {teleData.left_hand_pos.shape}:\n{teleData.left_hand_pos}")

@@ -2,6 +2,9 @@ import numpy as np
 from .televuer import TeleVuer
 from dataclasses import dataclass, field
 
+from math import sqrt
+from geometry_msgs.msg import Pose
+
 """
 (basis) OpenXR Convention : y up, z back, x right. 
 (basis) Robot  Convention : z up, y left, x front.  
@@ -65,7 +68,62 @@ p.s. From website: https://registry.khronos.org/OpenXR/specs/1.1/man/html/openxr
 
 p.s. **Unitree Arm/Hand URDF initial pose Convention** information come from URDF files.
 """
-
+def rotation_matrix_to_quaternion(R: np.ndarray):
+    """
+    Convert a 3x3 rotation matrix to a quaternion (x, y, z, w).
+    """
+    assert R.shape == (3, 3)
+    m00, m01, m02 = R[0, 0], R[0, 1], R[0, 2]
+    m10, m11, m12 = R[1, 0], R[1, 1], R[1, 2]
+    m20, m21, m22 = R[2, 0], R[2, 1], R[2, 2]
+    trace = m00 + m11 + m22
+    if trace > 0.0:
+        S = sqrt(trace + 1.0) * 2.0
+        qw = 0.25 * S
+        qx = (m21 - m12) / S
+        qy = (m02 - m20) / S
+        qz = (m10 - m01) / S
+    elif (m00 > m11) and (m00 > m22):
+        S = sqrt(1.0 + m00 - m11 - m22) * 2.0
+        qw = (m21 - m12) / S
+        qx = 0.25 * S
+        qy = (m01 + m10) / S
+        qz = (m02 + m20) / S
+    elif m11 > m22:
+        S = sqrt(1.0 + m11 - m00 - m22) * 2.0
+        qw = (m02 - m20) / S
+        qx = (m01 + m10) / S
+        qy = 0.25 * S
+        qz = (m12 + m21) / S
+    else:
+        S = sqrt(1.0 + m22 - m00 - m11) * 2.0
+        qw = (m10 - m01) / S
+        qx = (m02 + m20) / S
+        qy = (m12 + m21) / S
+        qz = 0.25 * S
+    return np.array([qx, qy, qz, qw])
+def T_to_pose(T: np.ndarray) -> Pose:
+    """
+    T: 4x4 homogeneous transform (numpy array)
+       [ R(3x3)  p(3x1) ]
+       [  0 0 0    1    ]
+    Returns: geometry_msgs.msg.Pose
+    """
+    assert T.shape == (4, 4)
+    # position
+    p = T[0:3, 3]
+    # rotation matrix
+    R = T[0:3, 0:3]
+    q = rotation_matrix_to_quaternion(R)  # (x, y, z, w)
+    pose = Pose()
+    pose.position.x = float(p[0])
+    pose.position.y = float(p[1])
+    pose.position.z = float(p[2])
+    pose.orientation.x = float(q[0])
+    pose.orientation.y = float(q[1])
+    pose.orientation.z = float(q[2])
+    pose.orientation.w = float(q[3])
+    return pose
 
 def safe_mat_update(prev_mat, mat):
     # Return previous matrix and False flag if the new matrix is non-singular (determinant ≠ 0).
@@ -282,12 +340,12 @@ class TeleVuerWrapper:
             # The origin of the coordinate for IK Solve is near the WAIST joint motor. You can use teleop/robot_control/robot_arm_ik.py Unit_Test to visualize it.
             # The origin of the coordinate of IPunitree_Brobot_head_arm is HEAD. 
             # So it is necessary to translate the origin of IPunitree_Brobot_head_arm from HEAD to WAIST.
-            left_IPunitree_Brobot_wrist_arm = left_IPunitree_Brobot_head_arm.copy()
-            right_IPunitree_Brobot_wrist_arm = right_IPunitree_Brobot_head_arm.copy()
-            left_IPunitree_Brobot_wrist_arm[0, 3] +=0.15 # x
-            right_IPunitree_Brobot_wrist_arm[0,3] +=0.15
-            left_IPunitree_Brobot_wrist_arm[2, 3] +=0.45 # z
-            right_IPunitree_Brobot_wrist_arm[2,3] +=0.45
+            left_IPunitree_Brobot_waist_arm = left_IPunitree_Brobot_head_arm.copy()
+            right_IPunitree_Brobot_waist_arm = right_IPunitree_Brobot_head_arm.copy()
+            left_IPunitree_Brobot_waist_arm[0, 3] +=0.15 # x
+            right_IPunitree_Brobot_waist_arm[0,3] +=0.15
+            left_IPunitree_Brobot_waist_arm[2, 3] +=0.45 # z
+            right_IPunitree_Brobot_waist_arm[2,3] +=0.45
 
             # -----------------------------------hand position----------------------------------------
             if left_arm_is_valid and right_arm_is_valid:
@@ -346,13 +404,18 @@ class TeleVuerWrapper:
                 left_Brobot_arm_hand_rot = None
                 right_Brobot_arm_hand_rot = None
             return TeleData(
-                head_pose=Brobot_world_head,
-                left_wrist_pose=left_IPunitree_Brobot_wrist_arm,
-                right_wrist_pose=right_IPunitree_Brobot_wrist_arm,
+                # T, origin:world, xr -> robot(change basis)
+                head_pose=T_to_pose(Brobot_world_head),
+                # T, origin:waist, xr -> robot(change basis) world -> head(translation) -> wrist(translation)
+                left_wrist_pose=T_to_pose(left_IPunitree_Brobot_waist_arm),
+                right_wrist_pose=T_to_pose(right_IPunitree_Brobot_waist_arm),
+                # 25*3(hand position), origin:arm xr -> robot(change basis) world -> arm, initial pose
                 left_hand_pos=left_IPunitree_Brobot_arm_hand_pos,
                 right_hand_pos=right_IPunitree_Brobot_arm_hand_pos,
+                # 25*3(hand rotation), origin:arm xr -> robot(change basis) world -> arm
                 left_hand_rot=left_Brobot_arm_hand_rot,
                 right_hand_rot=right_Brobot_arm_hand_rot,
+                # HandState
                 left_hand_pinch=self.tvuer.left_hand_pinch,
                 left_hand_pinchValue=self.tvuer.left_hand_pinchValue * 100.0,
                 left_hand_squeeze=self.tvuer.left_hand_squeeze,
@@ -383,18 +446,21 @@ class TeleVuerWrapper:
             # The origin of the coordinate for IK Solve is near the WAIST joint motor. You can use teleop/robot_control/robot_arm_ik.py Unit_Test to check it.
             # The origin of the coordinate of IPunitree_Brobot_head_arm is HEAD. 
             # So it is necessary to translate the origin of IPunitree_Brobot_head_arm from HEAD to WAIST.
-            left_IPunitree_Brobot_wrist_arm = left_IPunitree_Brobot_head_arm.copy()
-            right_IPunitree_Brobot_wrist_arm = right_IPunitree_Brobot_head_arm.copy()
-            left_IPunitree_Brobot_wrist_arm[0, 3] +=0.15 # x
-            right_IPunitree_Brobot_wrist_arm[0,3] +=0.15
-            left_IPunitree_Brobot_wrist_arm[2, 3] +=0.45 # z
-            right_IPunitree_Brobot_wrist_arm[2,3] +=0.45
+            left_IPunitree_Brobot_waist_arm = left_IPunitree_Brobot_head_arm.copy()
+            right_IPunitree_Brobot_waist_arm = right_IPunitree_Brobot_head_arm.copy()
+            left_IPunitree_Brobot_waist_arm[0, 3] +=0.15 # x
+            right_IPunitree_Brobot_waist_arm[0,3] +=0.15
+            left_IPunitree_Brobot_waist_arm[2, 3] +=0.45 # z
+            right_IPunitree_Brobot_waist_arm[2,3] +=0.45
             # left_IPunitree_Brobot_waist_arm[1, 3] +=0.02 # y
             # right_IPunitree_Brobot_waist_arm[1,3] +=0.02
             return TeleData(
-                head_pose=Brobot_world_head,
-                left_wrist_pose=left_IPunitree_Brobot_wrist_arm,
-                right_wrist_pose=right_IPunitree_Brobot_wrist_arm,
+                #(same) T, origin:world, xr -> robot(change basis)
+                head_pose=T_to_pose(Brobot_world_head),
+                #(same) T, origin:waist, xr -> robot(change basis) world -> head(translation) -> wrist(translation)
+                left_wrist_pose=T_to_pose(left_IPunitree_Brobot_waist_arm),
+                right_wrist_pose=T_to_pose(right_IPunitree_Brobot_waist_arm),
+                # HandState
                 left_ctrl_trigger=self.tvuer.left_ctrl_trigger,
                 left_ctrl_triggerValue=10.0 - self.tvuer.left_ctrl_triggerValue * 10,
                 left_ctrl_squeeze=self.tvuer.left_ctrl_squeeze,
