@@ -13,6 +13,34 @@ import rclpy
 from std_msgs.msg import Float32, Float32MultiArray, Float64MultiArray, Bool
 from geometry_msgs.msg import Pose
 logger_mp = logging_mp.get_logger(__name__, level=logging_mp.INFO)
+def get_yaw_pitch_degrees(pose):
+    """
+    Get yaw and pitch in degrees from a geometry_msgs/Pose.
+    Yaw: Rotation around Z-axis
+    Pitch: Rotation around Y-axis (or X depending on convention, but usually pitch is elevation)
+    
+    Using standard conversion from quaternion to Euler angles (roll, pitch, yaw).
+    """
+    q = pose.orientation
+    # roll (x-axis rotation)
+    sinr_cosp = 2 * (q.w * q.x + q.y * q.z)
+    cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+    # pitch (y-axis rotation)
+    sinp = 2 * (q.w * q.y - q.z * q.x)
+    if abs(sinp) >= 1:
+        pitch = np.copysign(np.pi / 2, sinp) # use 90 degrees if out of range
+    else:
+        pitch = np.arcsin(sinp)
+
+    # yaw (z-axis rotation)
+    siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+    cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+    return np.degrees(yaw), np.degrees(pitch)
+
 def run_test_tv_wrapper():
 
     ros_node = None
@@ -29,14 +57,15 @@ def run_test_tv_wrapper():
     
     use_hand_track=False
 
-    tv_wrapper = TeleVuerWrapper(use_hand_tracking=use_hand_track, pass_through=False,
-                                 binocular=True, img_shape=(480, 1280)
+    tv_wrapper = TeleVuerWrapper(use_hand_tracking=use_hand_track, display_mode="pass-through",
+                                 binocular=False, img_shape=(480, 1280)
                                 #  webrtc=True, webrtc_url="https://192.168.123.164:60001/offer"
                                 )
     # ROS2 init & publishers
     rclpy.init(args=None)
     ros_node = rclpy.create_node('xr_tele_state_pub')
     pub_head = ros_node.create_publisher(Pose, 'xr/head_pose', 10)
+    pub_head_delta = ros_node.create_publisher(Float32MultiArray, 'xr/head_angle_delta', 10)
     pub_left = ros_node.create_publisher(Pose, 'xr/left_wrist_pose', 10)
     pub_right = ros_node.create_publisher(Pose, 'xr/right_wrist_pose', 10)
     if use_hand_track:
@@ -66,18 +95,25 @@ def run_test_tv_wrapper():
             start_time = time.time()
             teleData = tv_wrapper.get_tele_data()
 
-            logger_mp.info("=== TeleData Snapshot ===")
-            logger_mp.info(f"[Head Pose]:\n{teleData.head_pose}")
-            logger_mp.info(f"[Left Wrist Pose]:\n{teleData.left_wrist_pose}")
-            logger_mp.info(f"[Right Wrist Pose]:\n{teleData.right_wrist_pose}")
+            # logger_mp.info("=== TeleData Snapshot ===")
+            # logger_mp.info(f"[Head Pose]:\n{teleData.head_pose}")
+            # logger_mp.info(f"[Left Wrist Pose]:\n{teleData.left_wrist_pose}")
+            # logger_mp.info(f"[Right Wrist Pose]:\n{teleData.right_wrist_pose}")
             # publish pose messages
             pub_head.publish(teleData.head_pose)
+            
+            # Publish head delta
+            yaw_deg, pitch_deg = get_yaw_pitch_degrees(teleData.head_pose)
+            head_delta_msg = Float32MultiArray()
+            head_delta_msg.data = [float(yaw_deg), float(pitch_deg)]
+            pub_head_delta.publish(head_delta_msg)
+
             pub_left.publish(teleData.left_wrist_pose)
             pub_right.publish(teleData.right_wrist_pose)
 
             if use_hand_track: # hand
-                logger_mp.info(f"[Left Hand Positions] shape {teleData.left_hand_pos.shape}:\n{teleData.left_hand_pos}")
-                logger_mp.info(f"[Right Hand Positions] shape {teleData.right_hand_pos.shape}:\n{teleData.right_hand_pos}")
+                # logger_mp.info(f"[Left Hand Positions] shape {teleData.left_hand_pos.shape}:\n{teleData.left_hand_pos}")
+                # logger_mp.info(f"[Right Hand Positions] shape {teleData.right_hand_pos.shape}:\n{teleData.right_hand_pos}")
                 # publish hand data
                 pos_l_msg = Float32MultiArray()
                 pos_l_msg.data = teleData.left_hand_pos.astype(np.float32).reshape(-1).tolist()
@@ -87,44 +123,44 @@ def run_test_tv_wrapper():
                 pub_rh_pos.publish(pos_r_msg)
                 
                 if teleData.left_hand_rot is not None:
-                    logger_mp.info(f"[Left Hand Rotations] shape {teleData.left_hand_rot.shape}:\n{teleData.left_hand_rot}")
+                    # logger_mp.info(f"[Left Hand Rotations] shape {teleData.left_hand_rot.shape}:\n{teleData.left_hand_rot}")
                     rot_l_msg = Float32MultiArray()
                     rot_l_msg.data = teleData.left_hand_rot.astype(np.float32).reshape(-1).tolist()  # 25*9
                     pub_lh_rot.publish(rot_l_msg)
                 if teleData.right_hand_rot is not None:
-                    logger_mp.info(f"[Right Hand Rotations] shape {teleData.right_hand_rot.shape}:\n{teleData.right_hand_rot}")
+                    # logger_mp.info(f"[Right Hand Rotations] shape {teleData.right_hand_rot.shape}:\n{teleData.right_hand_rot}")
                     rot_r_msg = Float32MultiArray()
                     rot_r_msg.data = teleData.right_hand_rot.astype(np.float32).reshape(-1).tolist()  # 25*9
                     pub_rh_rot.publish(rot_r_msg)
                 
-                logger_mp.info(f"[Left Pinch Value]: {teleData.left_hand_pinchValue:.2f}")
+                # logger_mp.info(f"[Left Pinch Value]: {teleData.left_hand_pinchValue:.2f}")
                 m = Float32(); m.data = float(teleData.left_hand_pinchValue); pub_l_pinch.publish(m)
-                logger_mp.info(f"[Right Pinch Value]: {teleData.right_hand_pinchValue:.2f}")
+                # logger_mp.info(f"[Right Pinch Value]: {teleData.right_hand_pinchValue:.2f}")
                 m = Float32(); m.data = float(teleData.right_hand_pinchValue); pub_r_pinch.publish(m)
                 
-                logger_mp.info(f"[Left Squeeze Value]: {teleData.left_hand_squeezeValue:.2f}")
+                # logger_mp.info(f"[Left Squeeze Value]: {teleData.left_hand_squeezeValue:.2f}")
                 m = Float32(); m.data = float(teleData.left_hand_squeezeValue); pub_l_sq_value.publish(m)
-                logger_mp.info(f"[Right Squeeze Value]: {teleData.right_hand_squeezeValue:.2f}")
+                # logger_mp.info(f"[Right Squeeze Value]: {teleData.right_hand_squeezeValue:.2f}")
                 m = Float32(); m.data = float(teleData.right_hand_squeezeValue); pub_r_sq_value.publish(m)
             else: # controller
-                logger_mp.info(f"[Left Trigger Value]: {teleData.left_ctrl_triggerValue:.2f}")
-                logger_mp.info(f"[Right Trigger Value]: {teleData.right_ctrl_triggerValue:.2f}")
+                # logger_mp.info(f"[Left Trigger Value]: {teleData.left_ctrl_triggerValue:.2f}")
+                # logger_mp.info(f"[Right Trigger Value]: {teleData.right_ctrl_triggerValue:.2f}")
                 # publish controller analogs
                 m = Float32(); m.data = float(teleData.left_ctrl_triggerValue); pub_l_trig.publish(m)
                 m = Float32(); m.data = float(teleData.right_ctrl_triggerValue); pub_r_trig.publish(m)
                 
-                logger_mp.info(f"[Left Squeeze Value]: {teleData.left_ctrl_squeezeValue:.2f}")
-                logger_mp.info(f"[Right Squeeze Value]: {teleData.right_ctrl_squeezeValue:.2f}")
+                # logger_mp.info(f"[Left Squeeze Value]: {teleData.left_ctrl_squeezeValue:.2f}")
+                # logger_mp.info(f"[Right Squeeze Value]: {teleData.right_ctrl_squeezeValue:.2f}")
                 m = Float32(); m.data = float(teleData.left_ctrl_squeezeValue); pub_l_sq.publish(m)
                 m = Float32(); m.data = float(teleData.right_ctrl_squeezeValue); pub_r_sq.publish(m)
                 
-                logger_mp.info(f"[Left Thumbstick Value]: {teleData.left_ctrl_thumbstickValue}")
-                logger_mp.info(f"[Right Thumbstick Value]: {teleData.right_ctrl_thumbstickValue}")
+                # logger_mp.info(f"[Left Thumbstick Value]: {teleData.left_ctrl_thumbstickValue}")
+                # logger_mp.info(f"[Right Thumbstick Value]: {teleData.right_ctrl_thumbstickValue}")
                 t = Float32MultiArray(); t.data = teleData.left_ctrl_thumbstickValue.astype(np.float32).tolist(); pub_l_thumb.publish(t)
                 t = Float32MultiArray(); t.data = teleData.right_ctrl_thumbstickValue.astype(np.float32).tolist(); pub_r_thumb.publish(t)
                 
-                logger_mp.info(f"[Left A/B Buttons]: A={teleData.left_ctrl_aButton}, B={teleData.left_ctrl_bButton}")
-                logger_mp.info(f"[Right A/B Buttons]: A={teleData.right_ctrl_aButton}, B={teleData.right_ctrl_bButton}")
+                # logger_mp.info(f"[Left A/B Buttons]: A={teleData.left_ctrl_aButton}, B={teleData.left_ctrl_bButton}")
+                # logger_mp.info(f"[Right A/B Buttons]: A={teleData.right_ctrl_aButton}, B={teleData.right_ctrl_bButton}")
                 b = Bool(); b.data = bool(teleData.left_ctrl_aButton); pub_l_a.publish(b)
                 b = Bool(); b.data = bool(teleData.left_ctrl_bButton); pub_l_b.publish(b)
                 b = Bool(); b.data = bool(teleData.right_ctrl_aButton); pub_r_a.publish(b)
@@ -134,7 +170,7 @@ def run_test_tv_wrapper():
             time_elapsed = current_time - start_time
             sleep_time = max(0, 0.033 - time_elapsed)
             time.sleep(sleep_time)
-            logger_mp.debug(f"main process sleep: {sleep_time}")
+            # logger_mp.debug(f"main process sleep: {sleep_time}")
 
     except KeyboardInterrupt:
         running = False
@@ -151,3 +187,4 @@ def run_test_tv_wrapper():
 
 if __name__ == '__main__':
     run_test_tv_wrapper()
+
