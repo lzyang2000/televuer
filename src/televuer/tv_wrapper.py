@@ -3,7 +3,12 @@ from .televuer import TeleVuer
 from dataclasses import dataclass, field
 
 from math import sqrt
-from geometry_msgs.msg import Pose
+try:
+    from geometry_msgs.msg import Pose as _Pose
+    _HAS_GEOMETRY_MSGS = True
+except ImportError:
+    _HAS_GEOMETRY_MSGS = False
+    _Pose = None
 from typing import Literal
 """
 (basis) OpenXR Convention : y up, z back, x right. 
@@ -102,12 +107,13 @@ def rotation_matrix_to_quaternion(R: np.ndarray):
         qy = (m12 + m21) / S
         qz = 0.25 * S
     return np.array([qx, qy, qz, qw])
-def T_to_pose(T: np.ndarray) -> Pose:
+def T_to_pose(T: np.ndarray):
     """
     T: 4x4 homogeneous transform (numpy array)
        [ R(3x3)  p(3x1) ]
        [  0 0 0    1    ]
-    Returns: geometry_msgs.msg.Pose
+    Returns: geometry_msgs.msg.Pose (if ROS 2 available) or a SimpleNamespace with
+             the same .position.x/y/z and .orientation.x/y/z/w interface.
     """
     assert T.shape == (4, 4)
     # position
@@ -115,7 +121,14 @@ def T_to_pose(T: np.ndarray) -> Pose:
     # rotation matrix
     R = T[0:3, 0:3]
     q = rotation_matrix_to_quaternion(R)  # (x, y, z, w)
-    pose = Pose()
+    if _HAS_GEOMETRY_MSGS:
+        pose = _Pose()
+    else:
+        from types import SimpleNamespace
+        pose = SimpleNamespace(
+            position=SimpleNamespace(x=0.0, y=0.0, z=0.0),
+            orientation=SimpleNamespace(x=0.0, y=0.0, z=0.0, w=1.0),
+        )
     pose.position.x = float(p[0])
     pose.position.y = float(p[1])
     pose.position.z = float(p[2])
@@ -296,7 +309,56 @@ class TeleVuerWrapper:
         self.tvuer = TeleVuer(use_hand_tracking=use_hand_tracking, binocular=binocular, img_shape=img_shape, display_fps=display_fps,
                               display_mode=display_mode, zmq=zmq, webrtc=webrtc, webrtc_url=webrtc_url, 
                               cert_file=cert_file, key_file=key_file)
-        
+        self._print_connection_banner(display_mode, use_hand_tracking)
+
+    @staticmethod
+    def _print_connection_banner(display_mode: str, use_hand_tracking: bool):
+        """Print a concise startup banner telling the user what URL to open on the VR headset."""
+        import socket
+        port = 8012
+
+        # Collect all non-loopback IPv4 addresses
+        ips = []
+        try:
+            hostname = socket.gethostname()
+            # getaddrinfo returns duplicates; use a set
+            for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+                ip = info[4][0]
+                if not ip.startswith("127."):
+                    ips.append(ip)
+        except Exception:
+            pass
+        # Also try the routing-table approach (works even without DNS)
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            primary_ip = s.getsockname()[0]
+            s.close()
+            if primary_ip not in ips:
+                ips.insert(0, primary_ip)
+        except Exception:
+            pass
+        if not ips:
+            ips = ["<your-machine-ip>"]
+
+        tracking_mode = "Hand tracking" if use_hand_tracking else "Controller tracking"
+
+        sep = "=" * 62
+        print(f"\n{sep}")
+        print(f"  TELEVUER — VR HEADSET CONNECTION")
+        print(sep)
+        print(f"  Open one of these URLs in your VR headset browser:")
+        for ip in ips:
+            print(f"    https://{ip}:{port}")
+        print()
+        print(f"  Tracking mode : {tracking_mode}")
+        print(f"  Display mode  : {display_mode}")
+        print()
+        print(f"  NOTE: You must accept the self-signed certificate warning")
+        print(f"        in the VR browser before the page will load.")
+        print(f"{sep}\n")
+
+
     def get_tele_data(self):
         """
         Get processed motion state data from the TeleVuer instance.
@@ -355,15 +417,13 @@ class TeleVuerWrapper:
             right_IPunitree_Brobot_head_arm[0:3, 3] = right_IPunitree_Brobot_world_arm[0:3, 3] - Brobot_world_head[0:3, 3]
 
             # =====coordinate origin offset=====
-            # The origin of the coordinate for IK Solve is near the WAIST joint motor. You can use teleop/robot_control/robot_arm_ik.py Unit_Test to visualize it.
-            # The origin of the coordinate of IPunitree_Brobot_head_arm is HEAD. 
-            # So it is necessary to translate the origin of IPunitree_Brobot_head_arm from HEAD to WAIST.
             left_IPunitree_Brobot_waist_arm = left_IPunitree_Brobot_head_arm.copy()
             right_IPunitree_Brobot_waist_arm = right_IPunitree_Brobot_head_arm.copy()
-            left_IPunitree_Brobot_waist_arm[0, 3] +=0.15 # x
-            right_IPunitree_Brobot_waist_arm[0,3] +=0.15
-            left_IPunitree_Brobot_waist_arm[2, 3] +=0.45 # z
-            right_IPunitree_Brobot_waist_arm[2,3] +=0.45
+            left_IPunitree_Brobot_waist_arm[0, 3] += -0.069373655  # x
+            right_IPunitree_Brobot_waist_arm[0, 3] += -0.069373655
+            left_IPunitree_Brobot_waist_arm[2, 3] += 0.230835692  # z
+            right_IPunitree_Brobot_waist_arm[2, 3] += 0.230835692
+
 
             # -----------------------------------hand position----------------------------------------
             if left_arm_is_valid and right_arm_is_valid:
@@ -461,17 +521,12 @@ class TeleVuerWrapper:
             right_IPunitree_Brobot_head_arm[0:3, 3] = right_IPunitree_Brobot_head_arm[0:3, 3] - Brobot_world_head[0:3, 3]
 
             # =====coordinate origin offset=====
-            # The origin of the coordinate for IK Solve is near the WAIST joint motor. You can use teleop/robot_control/robot_arm_ik.py Unit_Test to check it.
-            # The origin of the coordinate of IPunitree_Brobot_head_arm is HEAD. 
-            # So it is necessary to translate the origin of IPunitree_Brobot_head_arm from HEAD to WAIST.
             left_IPunitree_Brobot_waist_arm = left_IPunitree_Brobot_head_arm.copy()
             right_IPunitree_Brobot_waist_arm = right_IPunitree_Brobot_head_arm.copy()
-            left_IPunitree_Brobot_waist_arm[0, 3] +=0.15 # x
-            right_IPunitree_Brobot_waist_arm[0,3] +=0.15
-            left_IPunitree_Brobot_waist_arm[2, 3] +=0.45 # z
-            right_IPunitree_Brobot_waist_arm[2,3] +=0.45
-            # left_IPunitree_Brobot_waist_arm[1, 3] +=0.02 # y
-            # right_IPunitree_Brobot_waist_arm[1,3] +=0.02
+            left_IPunitree_Brobot_waist_arm[0, 3] += -0.069373655  # x
+            right_IPunitree_Brobot_waist_arm[0, 3] += -0.069373655
+            left_IPunitree_Brobot_waist_arm[2, 3] += 0.230835692  # z
+            right_IPunitree_Brobot_waist_arm[2, 3] += 0.230835692
             return TeleData(
                 #(same) T, origin:world, xr -> robot(change basis)
                 head_pose=T_to_pose(Brobot_world_head),
